@@ -52,13 +52,35 @@ npm start         # http://localhost:4400
 Fine for trying it out. For data that persists, upgrade the service to Starter ($7/mo) and uncomment
 the `disk:` block in `render.yaml`. (Railway and Fly.io are good alternatives with free volumes.)
 
-## Hardening (before opening to strangers)
+## Hardening
 
+Already in place:
+- ✅ **API keys encrypted at rest** (AES-256-GCM; server key from `JOBPILOT_SECRET`
+  env, or auto-generated to `<data>/.secret`). Decrypted only in memory at call time.
+- ✅ **Security headers** — Content-Security-Policy (blocks all scripts; app has none),
+  `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `X-Powered-By` removed.
+- ✅ **Rate limiting** — 5 new workspaces/IP/hour, 12 pipeline runs/workspace/hour.
+- ✅ **Per-workspace monthly spend cap** — hard-stops runs over `JOBPILOT_WS_MONTHLY_CAP`
+  (default $20) so a runaway loop can't drain someone's key.
+
+Still recommended before opening to the general public at scale:
 - Real auth (email verification + password or OAuth) instead of secret-URL workspaces.
-- Encrypt `anthropic_key` at rest (e.g., libsodium sealed box with a server key).
-- Per-workspace rate limits and a monthly spend cap that hard-stops runs.
 - Managed Postgres instead of local SQLite; per-workspace row-level security.
-- CSRF tokens on the POST forms; a Content-Security-Policy header.
+- CSRF tokens on the POST forms (the secret-URL model mitigates but doesn't eliminate CSRF).
+- A distributed rate limiter (the current one is per-instance, in-memory).
+
+## Configuration
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `PORT` | HTTP port | 4400 |
+| `JOBPILOT_DATA_DIR` | SQLite + `.secret` location | `./data` |
+| `JOBPILOT_SECRET` | 32-byte key (hex/base64) to encrypt API keys | auto-generated to `.secret` |
+| `JOBPILOT_WS_MONTHLY_CAP` | $/workspace/month hard cap | 20 |
+| `JOBPILOT_MODEL` | Anthropic model id | claude-sonnet-5 |
+
+> On a host with an ephemeral disk (Render free), set `JOBPILOT_SECRET` explicitly —
+> otherwise the auto-generated `.secret` is lost on restart and stored keys can't be decrypted.
 
 ## Relationship to JobPilot
 

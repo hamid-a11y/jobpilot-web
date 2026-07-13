@@ -51,11 +51,20 @@ test('two workspaces cannot see each other\'s jobs or documents', () => {
   assert.equal(dup.deduped, false);
 });
 
-test('per-workspace API keys are independent', () => {
+test('per-workspace API keys are independent and encrypted at rest', () => {
   const a = store.createWorkspace({ name: 'K1', anthropicKey: 'sk-one' });
   const b = store.createWorkspace({ name: 'K2', anthropicKey: 'sk-two' });
-  assert.equal(store.getWorkspace(a).anthropic_key, 'sk-one');
-  assert.equal(store.getWorkspace(b).anthropic_key, 'sk-two');
+  // Stored blob is ciphertext, not the plaintext key.
+  const storedA = store.getWorkspace(a).anthropic_key;
+  assert.ok(storedA.startsWith('v1:'), 'key must be encrypted at rest');
+  assert.ok(!storedA.includes('sk-one'), 'plaintext key must not appear in storage');
+  // Decrypts back correctly, and per-workspace.
+  assert.equal(store.getApiKey(a), 'sk-one');
+  assert.equal(store.getApiKey(b), 'sk-two');
+  // setKey re-encrypts.
+  store.setKey(a, 'sk-rotated');
+  assert.equal(store.getApiKey(a), 'sk-rotated');
+  assert.ok(store.getWorkspace(a).anthropic_key.startsWith('v1:'));
 });
 
 test('channel classifier keeps LinkedIn/Indeed out of automation', () => {

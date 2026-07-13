@@ -10,6 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { randomUUID, createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { encrypt, decrypt } from './crypto.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = process.env.JOBPILOT_DATA_DIR || path.join(ROOT, 'data');
@@ -86,16 +87,24 @@ const dedupKey = (company, title) =>
   sha256(`${company}|${title}`.toLowerCase().replace(/[^a-z0-9|]+/g, ' ').replace(/\s+/g, ' ').trim());
 
 // --- Workspaces ---
+// The API key is encrypted at rest (crypto.js). getWorkspace returns the row
+// with anthropic_key as the ENCRYPTED blob (truthy iff a key is set, safe to
+// pass around/render as a boolean). Use getApiKey(id) to get the plaintext,
+// only at the point of an API call.
 export function createWorkspace({ name, anthropicKey }) {
   const id = workspaceToken();
   db.prepare('INSERT INTO workspaces (id, name, anthropic_key, created_at) VALUES (?,?,?,?)')
-    .run(id, name || 'My workspace', anthropicKey || null, now());
+    .run(id, name || 'My workspace', encrypt(anthropicKey), now());
   return id;
 }
 export function getWorkspace(id) {
   const w = db.prepare('SELECT * FROM workspaces WHERE id=?').get(id);
   if (w) db.prepare('UPDATE workspaces SET last_seen_at=? WHERE id=?').run(now(), id);
   return w || null;
+}
+export function getApiKey(id) {
+  const w = db.prepare('SELECT anthropic_key FROM workspaces WHERE id=?').get(id);
+  return w ? decrypt(w.anthropic_key) : null;
 }
 export function updateProfile(id, profileObj) {
   db.prepare('UPDATE workspaces SET profile_json=? WHERE id=?').run(JSON.stringify(profileObj), id);
@@ -104,7 +113,7 @@ export function updateSettings(id, settingsObj) {
   db.prepare('UPDATE workspaces SET settings_json=? WHERE id=?').run(JSON.stringify(settingsObj), id);
 }
 export function setKey(id, key) {
-  db.prepare('UPDATE workspaces SET anthropic_key=? WHERE id=?').run(key || null, id);
+  db.prepare('UPDATE workspaces SET anthropic_key=? WHERE id=?').run(encrypt(key), id);
 }
 
 // --- Jobs (ALL scoped by workspace_id) ---

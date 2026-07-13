@@ -4,7 +4,7 @@
 // Bring-your-own Anthropic key: the server never holds a shared/owner key.
 import express from 'express';
 import {
-  createWorkspace, getWorkspace, updateProfile, updateSettings, setKey,
+  createWorkspace, getWorkspace, getApiKey, updateProfile, updateSettings, setKey,
   listJobs, getJob, updateJob, latestDocument, saveDocument, monthlySpend,
 } from './store.js';
 import { addManualJob, runPipeline } from './pipeline.js';
@@ -12,9 +12,32 @@ import { page, esc } from './views.js';
 import { blankProfile, defaultSettings } from './defaults.js';
 
 const app = express();
+app.disable('x-powered-by');
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
-// Never leak the secret workspace URL to employer sites via the Referer header.
-app.use((_req, res, next) => { res.setHeader('Referrer-Policy', 'no-referrer'); next(); });
+
+// Security headers. CSP allows the inline stylesheet + Google Fonts (the only
+// external origins the pages use) and blocks scripts entirely — there are none.
+app.use((_req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer'); // don't leak the secret workspace URL
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+  next();
+});
+
+// Simple in-memory rate limiter (single instance). Blunt but real: caps abusive
+// bursts on the expensive/creating endpoints without external infra.
+const hits = new Map();
+function rateLimit(key, max, windowMs) {
+  const nowMs = Date.now();
+  const e = hits.get(key);
+  if (!e || nowMs > e.resetAt) { hits.set(key, { count: 1, resetAt: nowMs + windowMs }); return true; }
+  if (e.count >= max) return false;
+  e.count++; return true;
+}
+const clientIp = (req) => (req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').toString().split(',')[0].trim();
+const WS_MONTHLY_CAP = Number(process.env.JOBPILOT_WS_MONTHLY_CAP || 20); // $/workspace/month
 
 // In-memory per-workspace pipeline run state (single instance; fine for a friends tool).
 const running = new Map(); // wsId -> { startedAt, result|null, error|null }
@@ -44,6 +67,8 @@ app.get('/', (_req, res) => {
 });
 
 app.post('/create', (req, res) => {
+  if (!rateLimit(`create:${clientIp(req)}`, 5, 3600e3)) // 5 new workspaces per IP per hour
+    return res.status(429).send(page('Slow down', '<div class="empty">Too many workspaces created from your network recently. Try again in a bit.</div>'));
   const id = createWorkspace({ name: (req.body.name || '').slice(0, 80), anthropicKey: (req.body.anthropicKey || '').trim() || null });
   updateProfile(id, blankProfile());
   updateSettings(id, defaultSettings());
@@ -94,11 +119,19 @@ app.get('/w/:id', (req, res) => {
 app.post('/w/:id/run', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
   if (!w.anthropic_key) return res.redirect(`/w/${w.id}/settings`);
+  if (!rateLimit(`run:${w.id}`, 12, 3600e3)) // 12 pipeline runs per workspace per hour
+    return res.status(429).send(page('Slow down', `<div class="empty">You've run the pipeline a lot in the last hour — give it a rest, then try again. <a href="/w/${w.id}">Back</a></div>`, { workspace: w }));
+  // Per-workspace monthly spend cap — hard stop so a runaway loop can't drain a key.
+  if (monthlySpend(w.id) >= WS_MONTHLY_CAP) {
+    running.set(w.id, { error: `Monthly cap of $${WS_MONTHLY_CAP} reached on your key. Resets next month.` });
+    return res.redirect(`/w/${w.id}`);
+  }
   const cur = running.get(w.id);
   if (!cur || cur.result || cur.error) {
     running.set(w.id, { startedAt: Date.now(), result: null, error: null });
+    const apiKey = getApiKey(w.id); // decrypt only here, at the point of use
     const profile = JSON.parse(w.profile_json); const settings = JSON.parse(w.settings_json);
-    runPipeline(w.id, w.anthropic_key, profile, settings, { tailorLimit: 5 })
+    runPipeline(w.id, apiKey, profile, settings, { tailorLimit: 5 })
       .then((result) => running.set(w.id, { result, error: null }))
       .catch((e) => running.set(w.id, { result: null, error: e.message }));
   }
