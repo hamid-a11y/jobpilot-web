@@ -1,0 +1,26 @@
+# One-click deploy blueprint for Render (render.com).
+# In Render: New + -> "Blueprint" -> connect this repo -> Apply.
+#
+# This uses the FREE plan, which has an EPHEMERAL filesystem: the SQLite
+# database resets whenever the service restarts or redeploys. That's fine for
+# trying it out and short-lived use. For data that survives restarts, upgrade
+# the service to the Starter plan ($7/mo) and uncomment the `disk:` block below
+# (persistent disks require a paid instance).
+services:
+  - type: web
+    name: jobpilot-web
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+    # --- For persistence, set plan: starter and uncomment both blocks below ---
+    #   - key: JOBPILOT_DATA_DIR
+    #     value: /var/data
+    # disk:
+    #   name: jobpilot-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

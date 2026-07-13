@@ -1,0 +1,16 @@
+{
+  "name": "jobpilot-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-user hosted JobPilot — friends sign up, enter their profile, and get AI-tailored application drafts on a personal dashboard. Bring your own Anthropic key.",
+  "type": "module",
+  "engines": { "node": ">=22.5.0" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
