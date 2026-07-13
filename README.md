@@ -44,13 +44,25 @@ npm start         # http://localhost:4400
 
 ## Deploy (Render, free)
 
-1. Push this repo to your GitHub (it's already set up if you cloned it from there).
-2. On render.com: **New + → Blueprint → connect this repo → Apply**. `render.yaml` does the rest.
-3. You get a public `https://<name>.onrender.com` URL to share.
+**One click:**
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/hamid-a11y/jobpilot-web)
+
+It reads `render.yaml`, builds, and gives you a public `https://<name>.onrender.com` URL to share.
+(Or do it manually: render.com → **New + → Blueprint → connect this repo → Apply**.)
+
+> **Set `JOBPILOT_SECRET` after the first deploy** (Render → your service → Environment → add a
+> 64-hex-char value — generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
+> Without it, the auto-generated key-encryption secret is lost on each restart and stored API keys
+> can't be decrypted.
 
 **Free-plan caveat:** the filesystem is ephemeral, so the SQLite database resets on restart/redeploy.
 Fine for trying it out. For data that persists, upgrade the service to Starter ($7/mo) and uncomment
 the `disk:` block in `render.yaml`. (Railway and Fly.io are good alternatives with free volumes.)
+
+**Custom domain (e.g. `jobpilot.djalphire.com`):** in Render → Settings → Custom Domains, add the
+subdomain; Render gives you a target. Add a `CNAME` record for `jobpilot` → that target in your DNS
+provider (for djalphire.com that's Google Cloud DNS). Render issues HTTPS automatically.
 
 ## Hardening
 
