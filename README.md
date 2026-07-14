@@ -14,6 +14,10 @@ control and avoids violating any job board's terms).
 2. You get a **private link** (an unguessable URL). Bookmark it — it's the only way back in, and it's
    your access key. Don't share it.
 3. Fill in your **profile** (the only source the AI is allowed to use — it can't make anything up).
+   You don't have to type it all: **Smart-fill** reads your uploaded **CV** (PDF/text), or you can
+   **paste your LinkedIn profile text / data export**, or **describe an update in plain English**
+   ("just moved to a Staff role at Stripe") — Claude structures it into the editable form and you
+   review + Save. (We never log into LinkedIn for you — that risks your account.) Update it anytime.
 4. Add target companies / paste a job, hit **Find & draft jobs**, and review the drafts on your dashboard.
 5. Approve the ones you like, apply on the employer's site, mark them submitted to track.
 

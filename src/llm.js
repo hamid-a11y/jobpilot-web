@@ -6,13 +6,19 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL = process.env.JOBPILOT_MODEL || 'claude-sonnet-5';
 const PRICE = { input: 3, output: 15 }; // rough $/MTok for the per-workspace budget meter
 
-export async function complete(wsId, apiKey, { purpose, system, prompt, maxTokens = 2000, json = false }) {
+// `pdfBase64`, when given, is sent as a native document block so Claude can
+// read an uploaded CV directly (no PDF-parsing dependency needed).
+export async function complete(wsId, apiKey, { purpose, system, prompt, maxTokens = 2000, json = false, pdfBase64 = null }) {
   if (!apiKey) throw new Error('No Anthropic API key set for this workspace. Add yours in Settings.');
+
+  const content = pdfBase64
+    ? [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } }, { type: 'text', text: prompt }]
+    : prompt;
 
   const res = await fetch(API_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: system || undefined, messages: [{ role: 'user', content: prompt }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: system || undefined, messages: [{ role: 'user', content }] }),
   });
   if (res.status === 401) throw new Error('Anthropic rejected your API key (401). Check it in Settings.');
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);

@@ -33,6 +33,13 @@ button.danger{color:var(--red);border-color:var(--red)}
 pre{white-space:pre-wrap;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto}
 .banner{background:var(--act);color:var(--act-ink);border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:14px}
 .warn{border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px}
+.fcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px}
+.frow{display:flex;gap:12px;flex-wrap:wrap}.frow>div{min-width:140px}
+.checks{display:flex;gap:14px;padding-top:8px}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:14px;color:var(--ink);margin:0}
+.chk input{width:auto}
+input[type=file]{padding:7px 9px}
+button.mini{padding:4px 10px;font-size:12px}
 `;
 
 export const page = (title, body, { workspace } = {}) => `<!doctype html><html lang="en"><head><meta charset="utf-8">

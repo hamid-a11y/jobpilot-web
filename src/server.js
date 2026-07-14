@@ -3,6 +3,7 @@
 // private document link. No cross-workspace access path exists (see store.js).
 // Bring-your-own Anthropic key: the server never holds a shared/owner key.
 import express from 'express';
+import multer from 'multer';
 import {
   createWorkspace, getWorkspace, getApiKey, updateProfile, updateSettings, setKey,
   listJobs, getJob, updateJob, latestDocument, saveDocument, monthlySpend,
@@ -10,10 +11,15 @@ import {
 import { addManualJob, runPipeline } from './pipeline.js';
 import { page, esc } from './views.js';
 import { blankProfile, defaultSettings } from './defaults.js';
+import { renderProfileForm, parseProfileForm, structureFromCV, mergeUpdate } from './profile.js';
 
 const app = express();
 app.disable('x-powered-by');
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// CV upload: in-memory only (never written to disk), 8 MB cap.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+// One-shot flash message after a smart-fill redirect (per workspace).
+const smartFlash = new Map();
 
 // Security headers. CSP allows the inline stylesheet + Google Fonts (the only
 // external origins the pages use) and blocks scripts entirely — there are none.
@@ -141,19 +147,57 @@ app.post('/w/:id/run', (req, res) => {
 // --- Profile form ---
 app.get('/w/:id/profile', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
-  res.send(page('Edit profile', `
-    <div class="section">Your profile — the ONLY source the AI may use</div>
-    <p class="note">Edit the JSON below. Every number and credential in your drafts must trace back to something here — that's how JobPilot stays honest. Keep numbers exact.</p>
-    <form method="post" action="/w/${w.id}/profile">
-      <textarea name="profile" style="min-height:420px">${esc(JSON.stringify(JSON.parse(w.profile_json), null, 2))}</textarea>
-      <div style="margin-top:12px"><button class="primary">Save profile</button> <a class="btn" href="/w/${w.id}">Back</a></div>
-    </form>`, { workspace: w }));
+  const flash = smartFlash.get(w.id); smartFlash.delete(w.id);
+  res.send(page('Edit profile', renderProfileForm(JSON.parse(w.profile_json), { wsId: w.id, hasKey: !!w.anthropic_key, banner: flash || '' }), { workspace: w }));
 });
+
+// Save the structured form — or handle a no-JS structural action (add/remove
+// role/cert) by mutating and re-rendering without leaving the page.
 app.post('/w/:id/profile', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
-  try { updateProfile(w.id, JSON.parse(req.body.profile)); }
-  catch { return res.status(400).send(page('Invalid JSON', `<div class="warn">That wasn't valid JSON — <a href="/w/${w.id}/profile">go back</a> and check it.</div>`, { workspace: w })); }
+  const profile = parseProfileForm(req.body);
+  const action = req.body.action || '';
+  if (action) {
+    if (action === 'add-role') profile.roles.push({ title: '', organization: '', start: '', end: '', facts: [] });
+    else if (action === 'add-cert') profile.certifications.push({ name: '', year: '' });
+    else if (action.startsWith('remove-role-')) profile.roles.splice(Number(action.slice(12)), 1);
+    else if (action.startsWith('remove-cert-')) profile.certifications.splice(Number(action.slice(12)), 1);
+    updateProfile(w.id, profile);
+    return res.send(page('Edit profile', renderProfileForm(profile, { wsId: w.id, hasKey: !!w.anthropic_key }), { workspace: w }));
+  }
+  updateProfile(w.id, profile);
   res.redirect(`/w/${w.id}`);
+});
+
+// Smart-fill from a plain-English update or pasted profile text.
+app.post('/w/:id/profile/smart', async (req, res) => {
+  const w = wsOr404(req, res); if (!w) return;
+  const text = (req.body.update || '').trim();
+  if (!w.anthropic_key || !text) return res.redirect(`/w/${w.id}/profile`);
+  try {
+    const merged = await mergeUpdate(w.id, getApiKey(w.id), JSON.parse(w.profile_json), text);
+    updateProfile(w.id, merged);
+    smartFlash.set(w.id, `<div class="banner" style="background:var(--green);color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:14px">✓ Applied your update — review the highlighted form below and <strong>Save</strong> to keep it.</div>`);
+  } catch (e) {
+    smartFlash.set(w.id, `<div class="warn">Couldn't apply that: ${esc(e.message)}</div>`);
+  }
+  res.redirect(`/w/${w.id}/profile`);
+});
+
+// Smart-fill from an uploaded CV (PDF read natively by Claude, or .txt/.md text).
+app.post('/w/:id/profile/cv', upload.single('cv'), async (req, res) => {
+  const w = wsOr404(req, res); if (!w) return;
+  if (!w.anthropic_key || !req.file) return res.redirect(`/w/${w.id}/profile`);
+  try {
+    const isPdf = req.file.mimetype === 'application/pdf' || /\.pdf$/i.test(req.file.originalname || '');
+    const src = isPdf ? { pdfBase64: req.file.buffer.toString('base64') } : { text: req.file.buffer.toString('utf8') };
+    const merged = await structureFromCV(w.id, getApiKey(w.id), JSON.parse(w.profile_json), src);
+    updateProfile(w.id, merged);
+    smartFlash.set(w.id, `<div class="banner" style="background:var(--green);color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:14px">✓ Read your CV and filled the form — review everything below and <strong>Save</strong>.</div>`);
+  } catch (e) {
+    smartFlash.set(w.id, `<div class="warn">Couldn't read that CV: ${esc(e.message)}. Try a PDF or paste the text instead.</div>`);
+  }
+  res.redirect(`/w/${w.id}/profile`);
 });
 
 // --- Settings (API key + watchlist) ---

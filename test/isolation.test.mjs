@@ -11,6 +11,7 @@ process.env.JOBPILOT_DATA_DIR = mkdtempSync(path.join(tmpdir(), 'jpweb-'));
 
 const store = await import('../src/store.js');
 const { validateTruthfulness, classifyChannel } = await import('../src/pipeline.js');
+const { parseProfileForm, normalizeProfile, renderProfileForm } = await import('../src/profile.js');
 
 test('two workspaces cannot see each other\'s jobs or documents', () => {
   const a = store.createWorkspace({ name: 'Alice', anthropicKey: 'sk-a' });
@@ -71,6 +72,41 @@ test('channel classifier keeps LinkedIn/Indeed out of automation', () => {
   assert.equal(classifyChannel('https://boards.greenhouse.io/x/jobs/1').channel, 'green');
   assert.equal(classifyChannel('https://www.linkedin.com/jobs/view/1').channel, 'yellow');
   assert.equal(classifyChannel(null).channel, 'red');
+});
+
+test('profile form parses posted fields back into the profile schema', () => {
+  const body = {
+    name: 'Alex Rivera', headline: 'Staff Engineer',
+    email: 'a@x.com', phone: '555', linkedin: 'in/alex', contactLocation: 'SF',
+    summary: 'Builder.', experienceYears: '9+', workAuthorization: 'US Citizen',
+    base: 'SF Bay Area', loc: { openTo: ['remote', 'hybrid'] }, relocate: 'Yes',
+    roles: { 0: { title: 'Staff Eng', organization: 'Stripe', start: '01/2022', end: 'present', facts: 'Led a team of 6\nCut latency 40%' } },
+    skills: 'Go\nKubernetes\nPostgres',
+    certs: { 0: { name: 'AWS SA', year: '2023' }, 1: { name: '', year: '' } },
+    core: 'Staff Engineer\nPrincipal Engineer', stretch: 'Eng Manager',
+    extraContext: 'Avoid crypto.',
+  };
+  const p = parseProfileForm(body);
+  assert.equal(p.name, 'Alex Rivera');
+  assert.deepEqual(p.location.openTo, ['remote', 'hybrid']);
+  assert.equal(p.location.willingToRelocate, 'Yes');
+  assert.equal(p.roles.length, 1);
+  assert.deepEqual(p.roles[0].facts, ['Led a team of 6', 'Cut latency 40%']);
+  assert.deepEqual(p.skills, ['Go', 'Kubernetes', 'Postgres']);
+  assert.equal(p.certifications.length, 1); // blank cert dropped
+  assert.deepEqual(p.targetRoles.core, ['Staff Engineer', 'Principal Engineer']);
+  assert.equal(p.extraContext, 'Avoid crypto.');
+});
+
+test('profile normalizer and renderer tolerate empty/partial input without crashing', () => {
+  const empty = normalizeProfile();
+  assert.deepEqual(empty.roles, []);
+  assert.deepEqual(empty.location.openTo, []);
+  const html = renderProfileForm({ name: 'X', roles: [{ title: 'Dev', facts: ['did <stuff> & things'] }] }, { wsId: 'w1', hasKey: false });
+  assert.match(html, /Save profile/);
+  assert.match(html, /Read my CV/);
+  assert.ok(html.includes('did &lt;stuff&gt; &amp; things'), 'user content is HTML-escaped');
+  assert.ok(html.includes('disabled'), 'no-key state disables the smart-fill buttons');
 });
 
 test('truthfulness gate blocks fabricated numbers and credentials', () => {
