@@ -88,9 +88,9 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
   <div class="fcard">
     <p class="note" style="margin-top:0">Give it your CV or describe your background in your own words. It fills the form below; you review, edit, and Save. Nothing is accepted until you Save. ${hasKey ? '' : '<strong style="color:var(--red)">Add your Anthropic key in Settings first.</strong>'}</p>
     <form method="post" action="/w/${wsId}/profile/cv" enctype="multipart/form-data">
-      <label>Upload your CV/résumé <span class="note">PDF or .txt — read directly, never stored as a file</span></label>
+      <label>Upload your CV/résumé <span class="note">PDF, Word (.docx/.doc), or .txt — read directly, never stored as a file</span></label>
       <div class="frow" style="align-items:end">
-        <input type="file" name="cv" accept=".pdf,.txt,.md" style="flex:2">
+        <input type="file" name="cv" accept=".pdf,.doc,.docx,.txt,.md" style="flex:2">
         <button class="primary" ${hasKey ? '' : 'disabled'} style="flex:none">Read my CV →</button>
       </div>
     </form>

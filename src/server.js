@@ -12,8 +12,9 @@ import {
   listJobs, getJob, updateJob, latestDocument, saveDocument, monthlySpend,
 } from './store.js';
 import { addManualJob, runPipeline } from './pipeline.js';
+import mammoth from 'mammoth';
 import { signSession, readSession } from './crypto.js';
-import { page, esc } from './views.js';
+import { page, esc, steps } from './views.js';
 import { blankProfile, defaultSettings } from './defaults.js';
 import { renderProfileForm, parseProfileForm, structureFromCV, mergeUpdate } from './profile.js';
 
@@ -59,8 +60,8 @@ const profileComplete = (p) => p && p.name && p.name[0] !== '<' && (p.roles || [
 app.get('/', (req, res) => {
   const wsId = sessionWsId(req);
   if (wsId && getWorkspace(wsId)) return res.redirect(`/w/${wsId}`);
-  res.send(page('JobPilot — sign in', `
-    <div class="hero"><h2>Your AI job-application assistant</h2>
+  res.send(page('Sign in', `
+    <div class="hero"><h2>Hamid&#39;s Friend Agentic Job Portal</h2>
       <p>Tell it about your experience once. It finds relevant roles, ranks them, and drafts tailored
       resumes and cover letters — grounded only in facts you verify. You review and apply; it never
       submits for you. Make a few different profiles for different kinds of roles.</p></div>
@@ -156,14 +157,17 @@ app.get('/w/:id', (req, res) => {
       </div></div>`;
   }).join('');
 
-  res.send(page('Your dashboard', `${profilesBar(w, active)}${banner}${runState}
+  const stepNum = !w.anthropic_key ? 1 : !profileComplete(profile) ? 2 : jobs.length === 0 ? 3 : 4;
+  res.send(page('Your dashboard', `${steps(stepNum)}
+    <p class="lede">Your applications for the <strong>${esc(active.name)}</strong> profile. Switch profiles or start a new search below — then review each draft, edit it, and apply.</p>
+    ${profilesBar(w, active)}${banner}${runState}
     <div class="row" style="margin-bottom:16px">
       <form method="post" action="/w/${w.id}/run"><button class="primary" ${!w.anthropic_key ? 'disabled' : ''}>Find &amp; draft jobs</button></form>
       <a class="btn" href="/w/${w.id}/profile">Edit “${esc(active.name)}” profile</a>
       <a class="btn" href="/w/${w.id}/add">Add a job by URL</a>
       <span class="note">This month: $${spend.toFixed(2)} on your key</span>
     </div>
-    ${cards || `<div class="empty">No jobs in “${esc(active.name)}” yet. Set target companies in Settings or paste a job URL, then “Find &amp; draft jobs”.</div>`}`, { workspace: w }));
+    ${cards || `<div class="empty">No jobs in “${esc(active.name)}” yet. Set target companies in Settings or paste a job URL, then “Find &amp; draft jobs”.</div>`}`, { workspace: w, nav: 'dashboard' }));
 });
 
 // --- Profile switching / management ---
@@ -191,12 +195,12 @@ app.get('/w/:id/profiles', (req, res) => {
       <form method="post" action="/w/${w.id}/profiles/delete" style="margin:0"><input type="hidden" name="pid" value="${esc(p.id)}"><button class="mini danger">Delete</button></form>
     </div></div>`).join('');
   res.send(page('Profiles', `<div class="section">Your profiles</div>
-    <p class="note">Each profile is a separate search with its own résumé facts and application history — e.g. one for backend roles, one for management.</p>
+    <p class="lede">Each profile is a separate search with its own résumé facts and application history — e.g. one for backend roles, one for management. Pick “Use” to switch which one the dashboard shows.</p>
     ${rows}
     <form method="post" action="/w/${w.id}/profiles/new" class="row" style="gap:8px;margin-top:8px">
       <input name="name" placeholder="New profile name" style="flex:1"><button class="primary">+ Add profile</button>
     </form>
-    <div style="margin-top:16px"><a class="btn" href="/w/${w.id}">Back to dashboard</a></div>`, { workspace: w }));
+    <div style="margin-top:16px"><a class="btn" href="/w/${w.id}">Back to dashboard</a></div>`, { workspace: w, nav: 'profiles' }));
 });
 app.post('/w/:id/profiles/rename', (req, res) => { const w = wsOr404(req, res); if (!w) return; renameProfile(w.id, req.body.pid, req.body.name); res.redirect(`/w/${w.id}/profiles`); });
 app.post('/w/:id/profiles/delete', (req, res) => { const w = wsOr404(req, res); if (!w) return; deleteProfile(w.id, req.body.pid); res.redirect(`/w/${w.id}/profiles`); });
@@ -224,8 +228,8 @@ app.get('/w/:id/profile', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
   const active = getActiveProfile(w.id);
   const flash = smartFlash.get(w.id); smartFlash.delete(w.id);
-  res.send(page(`Edit “${active.name}”`, `<p class="note">Editing profile: <strong>${esc(active.name)}</strong> · <a href="/w/${w.id}/profiles">switch/manage</a></p>` +
-    renderProfileForm(JSON.parse(active.profile_json || '{}'), { wsId: w.id, hasKey: !!w.anthropic_key, banner: flash || '' }), { workspace: w }));
+  res.send(page(`Edit “${active.name}”`, `<p class="lede">Editing the <strong>${esc(active.name)}</strong> profile · <a href="/w/${w.id}/profiles">switch or manage profiles</a>. This is the only source the AI may use — upload a CV or describe your background below, review, then Save.</p>` +
+    renderProfileForm(JSON.parse(active.profile_json || '{}'), { wsId: w.id, hasKey: !!w.anthropic_key, banner: flash || '' }), { workspace: w, nav: 'profiles' }));
 });
 app.post('/w/:id/profile', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
@@ -260,8 +264,13 @@ app.post('/w/:id/profile/cv', upload.single('cv'), async (req, res) => {
   const active = getActiveProfile(w.id);
   if (!w.anthropic_key || !req.file) return res.redirect(`/w/${w.id}/profile`);
   try {
-    const isPdf = req.file.mimetype === 'application/pdf' || /\.pdf$/i.test(req.file.originalname || '');
-    const src = isPdf ? { pdfBase64: req.file.buffer.toString('base64') } : { text: req.file.buffer.toString('utf8') };
+    const name = req.file.originalname || '';
+    const isPdf = req.file.mimetype === 'application/pdf' || /\.pdf$/i.test(name);
+    const isDocx = /officedocument\.wordprocessingml|msword/i.test(req.file.mimetype) || /\.docx?$/i.test(name);
+    let src;
+    if (isPdf) src = { pdfBase64: req.file.buffer.toString('base64') };
+    else if (isDocx) src = { text: (await mammoth.extractRawText({ buffer: req.file.buffer })).value };
+    else src = { text: req.file.buffer.toString('utf8') };
     const merged = await structureFromCV(w.id, getApiKey(w.id), JSON.parse(active.profile_json || '{}'), src);
     updateProfileById(w.id, active.id, merged);
     smartFlash.set(w.id, `<div class="banner" style="background:var(--green);color:#fff;border-radius:8px;padding:12px 16px;margin-bottom:14px">✓ Read your CV and filled “${esc(active.name)}” — review and <strong>Save</strong>.</div>`);
@@ -282,7 +291,7 @@ app.get('/w/:id/settings', (req, res) => {
     <form method="post" action="/w/${w.id}/settings">
       <textarea name="settings" style="min-height:280px">${esc(JSON.stringify(JSON.parse(w.settings_json), null, 2))}</textarea>
       <div style="margin-top:12px"><button class="primary">Save search settings</button> <a class="btn" href="/w/${w.id}">Back</a></div>
-    </form>`, { workspace: w }));
+    </form>`, { workspace: w, nav: 'settings' }));
 });
 app.post('/w/:id/key', (req, res) => { const w = wsOr404(req, res); if (!w) return; const k = (req.body.anthropicKey || '').trim(); if (k) setKey(w.id, k); res.redirect(`/w/${w.id}/settings`); });
 app.post('/w/:id/settings', (req, res) => {
@@ -296,6 +305,7 @@ app.post('/w/:id/settings', (req, res) => {
 app.get('/w/:id/add', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
   res.send(page('Add a job', `<div class="section">Add a job by URL</div>
+    <p class="lede">Found a role yourself? Add it here and it joins your active profile's pipeline for ranking and drafting.</p>
     <form method="post" action="/w/${w.id}/add">
       <label>Company</label><input name="company" required maxlength="120">
       <label>Job title</label><input name="title" required maxlength="160">
@@ -303,7 +313,7 @@ app.get('/w/:id/add', (req, res) => {
       <label>Location</label><input name="location" maxlength="120">
       <label>Job description (paste it — better drafts)</label><textarea name="jdText"></textarea>
       <div style="margin-top:12px"><button class="primary">Add job</button> <a class="btn" href="/w/${w.id}">Back</a></div>
-    </form>`, { workspace: w }));
+    </form>`, { workspace: w, nav: 'add' }));
 });
 app.post('/w/:id/add', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
@@ -342,7 +352,7 @@ app.get('/w/:id/job/:jobId', (req, res) => {
       <form method="post" action="/w/${w.id}/job/${j.id}/reject"><button class="danger">Reject</button></form>
       <a class="btn" href="/w/${w.id}">Back</a>
     </div>
-    <p class="note" style="margin-top:12px">Approving records your decision — JobPilot never submits for you. Open the apply URL, use your résumé/cover letter, then mark it submitted to track it.</p>`, { workspace: w }));
+    <p class="note" style="margin-top:12px">Approving records your decision — this portal never submits for you. Open the apply URL, use your résumé/cover letter, then mark it submitted to track it.</p>`, { workspace: w }));
 });
 app.post('/w/:id/job/:jobId/doc', (req, res) => {
   const w = wsOr404(req, res); if (!w) return;
