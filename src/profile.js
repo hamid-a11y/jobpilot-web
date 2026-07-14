@@ -1,7 +1,7 @@
 // Friendly, editable profile form (replaces the raw-JSON textarea) + the two
 // Claude-powered fillers: structure an uploaded CV / pasted text, and merge a
 // plain-English update. The profile is still the ONLY source the tailoring AI
-// may use, so the human always reviews and Saves — nothing is auto-accepted.
+// may use, so the human always reviews and Saves, nothing is auto-accepted.
 import { esc } from './views.js';
 import { complete } from './llm.js';
 
@@ -70,10 +70,10 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
         <div style="flex:1">${field('Start', `roles[${i}][start]`, r.start, { ph: 'MM/YYYY' })}</div>
         <div style="flex:1">${field('End', `roles[${i}][end]`, r.end, { ph: 'present' })}</div>
       </div>
-      <label>What you did — one bullet per line <span class="note">use EXACT numbers; every metric in your résumé must trace to a line here</span></label>
+      <label>What you did, one bullet per line <span class="note">use EXACT numbers; every metric in your résumé must trace to a line here</span></label>
       <textarea name="roles[${i}][facts]" style="min-height:90px">${esc(p.roles[i].facts.join('\n'))}</textarea>
       <div style="margin-top:6px"><button name="action" value="remove-role-${i}" class="mini">Remove this role</button></div>
-    </div>`).join('') : '<p class="note">No roles yet — add one below, or use Smart-fill to import from your CV.</p>';
+    </div>`).join('') : '<p class="note">No roles yet, add one below, or use Smart-fill to import from your CV.</p>';
 
   const certRows = p.certifications.length ? p.certifications.map((c, i) => `
     <div class="frow">
@@ -84,11 +84,11 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
 
   return `
   ${banner}
-  <div class="section">Smart-fill — let Claude do the typing</div>
+  <div class="section">Smart-fill, let Claude do the typing</div>
   <div class="fcard">
     <p class="note" style="margin-top:0">Give it your CV or describe your background in your own words. It fills the form below; you review, edit, and Save. Nothing is accepted until you Save. ${hasKey ? '' : '<strong style="color:var(--red)">Add your Anthropic key in Settings first.</strong>'}</p>
     <form method="post" action="/w/${wsId}/profile/cv" enctype="multipart/form-data">
-      <label>Upload your CV/résumé <span class="note">PDF, Word (.docx/.doc), or .txt — read directly, never stored as a file</span></label>
+      <label>Upload your CV/résumé <span class="note">PDF, Word (.docx/.doc), or .txt, read directly, never stored as a file</span></label>
       <div class="frow" style="align-items:end">
         <input type="file" name="cv" accept=".pdf,.doc,.docx,.txt,.md" style="flex:2">
         <button class="primary" ${hasKey ? '' : 'disabled'} style="flex:none">Read my CV →</button>
@@ -117,7 +117,7 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
         <div style="flex:1">${field('LinkedIn URL', 'linkedin', p.contact.linkedin, { ph: 'linkedin.com/in/…' })}</div>
         <div style="flex:1">${field('Location', 'contactLocation', p.contact.location, { ph: 'City, State' })}</div>
       </div>
-      <label>Professional summary <span class="note">2–3 sentences, real and specific</span></label>
+      <label>Professional summary <span class="note">2-3 sentences, real and specific</span></label>
       <textarea name="summary">${esc(p.summary)}</textarea>
     </div>
 
@@ -125,7 +125,7 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
     <div class="fcard">
       <div class="frow">
         <div style="flex:1">${field('Years of experience', 'experienceYears', p.experienceYears, { ph: '8+' })}</div>
-        <div style="flex:2">${field('Work authorization', 'workAuthorization', p.workAuthorization, { ph: 'US Citizen — no sponsorship required' })}</div>
+        <div style="flex:2">${field('Work authorization', 'workAuthorization', p.workAuthorization, { ph: 'US Citizen, no sponsorship required' })}</div>
       </div>
       <div class="frow">
         <div style="flex:1">${field('Based in', 'base', p.location.base, { ph: 'San Francisco Bay Area' })}</div>
@@ -142,19 +142,19 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
     ${roleCards}
     <div style="margin:8px 0 4px"><button name="action" value="add-role">+ Add a role</button></div>
 
-    <div class="section">Skills — one per line</div>
+    <div class="section">Skills, one per line</div>
     <div class="fcard"><textarea name="skills" style="min-height:110px">${esc(p.skills.join('\n'))}</textarea></div>
 
     <div class="section">Certifications</div>
     <div class="fcard">${certRows}<div style="margin-top:6px"><button name="action" value="add-cert">+ Add a certification</button></div></div>
 
-    <div class="section">Target roles — one per line</div>
+    <div class="section">Target roles, one per line</div>
     <div class="fcard"><div class="frow">
       <div style="flex:1"><label>Core (strongest fit)</label><textarea name="core" style="min-height:90px">${esc(p.targetRoles.core.join('\n'))}</textarea></div>
       <div style="flex:1"><label>Stretch (aspirational)</label><textarea name="stretch" style="min-height:90px">${esc(p.targetRoles.stretch.join('\n'))}</textarea></div>
     </div></div>
 
-    <div class="section">Anything else — extra context for a better search</div>
+    <div class="section">Anything else, extra context for a better search</div>
     <div class="fcard"><textarea name="extraContext" placeholder="Preferences, industries to avoid, must-haves, visa timing, comp expectations, anything the AI should weigh…">${esc(p.extraContext)}</textarea></div>
 
     <div class="actions" style="position:sticky;bottom:0;background:var(--paper);padding:12px 0;border-top:1px solid var(--line);margin-top:16px">
@@ -167,7 +167,7 @@ export function renderProfileForm(p, { wsId, banner = '', hasKey = true } = {}) 
 // --- Claude fillers ---
 const SCHEMA_HINT = `Return ONLY JSON matching this exact shape (omit nothing; use "" or [] when unknown):
 {"name":"","headline":"","contact":{"email":"","phone":"","linkedin":"","location":""},"summary":"","experienceYears":"","workAuthorization":"","location":{"base":"","openTo":["remote"|"hybrid"|"onsite"],"willingToRelocate":"Yes"|"No"|""},"roles":[{"title":"","organization":"","start":"MM/YYYY","end":"present or MM/YYYY","facts":["accomplishment with EXACT numbers"]}],"skills":[""],"certifications":[{"name":"","year":""}],"targetRoles":{"core":[""],"stretch":[""]},"extraContext":""}`;
-const RULES = `Rules: use ONLY facts present in the source — never invent employers, titles, dates, numbers, or certifications. Copy numbers verbatim. Keep any existing CURRENT PROFILE values unless the source clearly updates them. Merge, don't wipe.`;
+const RULES = `Rules: use ONLY facts present in the source, never invent employers, titles, dates, numbers, or certifications. Copy numbers verbatim. Keep any existing CURRENT PROFILE values unless the source clearly updates them. Merge, don't wipe.`;
 
 export async function structureFromCV(wsId, apiKey, current, { pdfBase64 = null, text = '' }) {
   const merged = await complete(wsId, apiKey, {

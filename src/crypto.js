@@ -1,7 +1,7 @@
 // Encrypt each workspace's Anthropic API key at rest (AES-256-GCM). The server
 // key comes from JOBPILOT_SECRET (hex/base64, 32 bytes) or, if unset, a random
 // key persisted once to <data>/.secret. Values are only decrypted in memory at
-// the moment of an API call — never stored or rendered in plaintext.
+// the moment of an API call, never stored or rendered in plaintext.
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';

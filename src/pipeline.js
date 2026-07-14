@@ -10,13 +10,13 @@ const CHANNEL_RULES = [
   { re: /boards\.greenhouse\.io|greenhouse\.io\/.+\/jobs/i, channel: 'green', reason: 'Greenhouse public board' },
   { re: /jobs\.lever\.co/i, channel: 'green', reason: 'Lever public board' },
   { re: /jobs\.ashbyhq\.com|ashbyhq\.com/i, channel: 'green', reason: 'Ashby public board' },
-  { re: /linkedin\.com/i, channel: 'yellow', reason: 'LinkedIn — ToS prohibits automation; you apply manually' },
-  { re: /indeed\.com/i, channel: 'yellow', reason: 'Indeed — ToS prohibits automation; you apply manually' },
+  { re: /linkedin\.com/i, channel: 'yellow', reason: 'LinkedIn, ToS prohibits automation; you apply manually' },
+  { re: /indeed\.com/i, channel: 'yellow', reason: 'Indeed, ToS prohibits automation; you apply manually' },
 ];
 export function classifyChannel(applyUrl) {
-  if (!applyUrl) return { channel: 'red', reason: 'No direct apply URL — manual only' };
+  if (!applyUrl) return { channel: 'red', reason: 'No direct apply URL, manual only' };
   for (const r of CHANNEL_RULES) if (r.re.test(applyUrl)) return { channel: r.channel, reason: r.reason };
-  return { channel: 'yellow', reason: 'Unclassified career page — you apply manually' };
+  return { channel: 'yellow', reason: 'Unclassified career page, you apply manually' };
 }
 
 const stripHtml = (h) => (h || '').replace(/<[^>]+>/g, ' ').replace(/&\w+;/g, ' ').replace(/\s+/g, ' ').trim();
@@ -55,7 +55,7 @@ export async function discover(wsId, settings, profileId = null) {
         const { deduped: d } = upsertJob(wsId, { ...rec, channel, channel_reason: reason, profile_id: profileId });
         d ? deduped++ : ingested++;
       }
-    } catch (e) { errors.push(`${w.ats}:${w.board} — ${e.message}`); }
+    } catch (e) { errors.push(`${w.ats}:${w.board}, ${e.message}`); }
   }
   return { ingested, deduped, errors };
 }
@@ -69,7 +69,7 @@ export function addManualJob(wsId, { company, title, applyUrl, location, jdText 
 // --- Ranking ---
 const RANK_SYSTEM = `You are the Matching & Ranking agent in JobPilot, scoring a job for one candidate.
 Score honestly. Read the candidate's location, work authorization, relocation stance, seniority, and
-target role families from the CANDIDATE PROFILE — never assume them. Respond ONLY with JSON:
+target role families from the CANDIDATE PROFILE, never assume them. Respond ONLY with JSON:
 {"score":<0-100 int>,"tier":"core"|"stretch"|"discard","matches":[<3-5 short strings>],"gaps":[<1-3 short strings>],"rationale":"<2-3 sentences>"}
 tier=discard if score<40 or a hard dealbreaker (clearance the candidate lacks; sponsorship the role won't give but the candidate needs; seniority far below the candidate).`;
 
@@ -91,6 +91,7 @@ NON-NEGOTIABLE:
 2. Every quantitative claim (numbers, %, years, team sizes, $) must be copied verbatim from the profile.
 3. Align to the job by LABELED ANALOGY only ("directly analogous to…"); never rewrite a fact's purpose to mirror the JD.
 4. Write like a strong human candidate. No AI boilerplate ("I am excited to apply", "proven track record", "passionate about").
+5. PUNCTUATION: never use em dashes or en dashes. Use commas, colons, parentheses, or periods instead. The only dash allowed is the ordinary hyphen in compound words.
 Respond ONLY with JSON:
 {"resume_md":"<tailored resume, Markdown>","cover_letter_md":"<cover letter <=350 words, Markdown>","screening_answers":[{"question":"","answer":"","source":"profile"|"needs-human"}],"claims":[{"claim":"","trace":"<profile field it comes from>"}]}`;
 

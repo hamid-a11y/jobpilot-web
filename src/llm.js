@@ -1,4 +1,4 @@
-// LLM client — the API key is per-workspace (BYO), passed in per call. The
+// LLM client, the API key is per-workspace (BYO), passed in per call. The
 // server never uses a shared/owner key, so no usage ever bills the operator.
 import { recordUsage } from './store.js';
 
@@ -28,7 +28,7 @@ export async function complete(wsId, apiKey, { purpose, system, prompt, maxToken
   const inTok = data.usage?.input_tokens ?? 0, outTok = data.usage?.output_tokens ?? 0;
   recordUsage(wsId, purpose, inTok, outTok, (inTok * PRICE.input + outTok * PRICE.output) / 1e6);
 
-  if (data.stop_reason === 'max_tokens') throw new Error(`Response hit the ${maxTokens}-token limit — try a shorter job description.`);
+  if (data.stop_reason === 'max_tokens') throw new Error(`Response hit the ${maxTokens}-token limit, try a shorter job description.`);
   if (!json) return text;
   const cleaned = text.replace(/```json|```/g, '').trim();
   const slice = cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
