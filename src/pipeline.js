@@ -32,7 +32,7 @@ function matchesProfile(title, profiles) {
 }
 
 // --- Discovery: poll the workspace's watchlist of public ATS boards ---
-export async function discover(wsId, settings) {
+export async function discover(wsId, settings, profileId = null) {
   const profiles = settings.profiles || [];
   const watchlist = settings.watchlist || [];
   let ingested = 0, deduped = 0; const errors = [];
@@ -52,7 +52,7 @@ export async function discover(wsId, settings) {
       for (const rec of recs) {
         if (!matchesProfile(rec.title, profiles)) continue;
         const { channel, reason } = classifyChannel(rec.apply_url);
-        const { deduped: d } = upsertJob(wsId, { ...rec, channel, channel_reason: reason });
+        const { deduped: d } = upsertJob(wsId, { ...rec, channel, channel_reason: reason, profile_id: profileId });
         d ? deduped++ : ingested++;
       }
     } catch (e) { errors.push(`${w.ats}:${w.board} — ${e.message}`); }
@@ -61,9 +61,9 @@ export async function discover(wsId, settings) {
 }
 
 // Manual single-job intake (paste a URL + JD)
-export function addManualJob(wsId, { company, title, applyUrl, location, jdText }) {
+export function addManualJob(wsId, { company, title, applyUrl, location, jdText }, profileId = null) {
   const { channel, reason } = classifyChannel(applyUrl);
-  return upsertJob(wsId, { company, title, apply_url: applyUrl, location, jd_text: jdText, source: 'manual', channel, channel_reason: reason });
+  return upsertJob(wsId, { company, title, apply_url: applyUrl, location, jd_text: jdText, source: 'manual', channel, channel_reason: reason, profile_id: profileId });
 }
 
 // --- Ranking ---
@@ -136,15 +136,16 @@ export function validateTruthfulness(result, profile) {
   return { pass: failures.length === 0, failures };
 }
 
-// Run the whole pipeline for a workspace: discover -> rank new -> tailor top N.
-export async function runPipeline(wsId, apiKey, profile, settings, { tailorLimit = 5 } = {}) {
+// Run the whole pipeline for one PROFILE: discover -> rank new -> tailor top N.
+// All jobs are tagged with profileId so each profile keeps its own history.
+export async function runPipeline(wsId, apiKey, profile, settings, { tailorLimit = 5, profileId = null } = {}) {
   const out = { discover: null, ranked: 0, tailored: 0, errors: [] };
-  if ((settings.watchlist || []).length) out.discover = await discover(wsId, settings);
-  for (const job of listJobs(wsId, ['discovered'])) {
+  if ((settings.watchlist || []).length) out.discover = await discover(wsId, settings, profileId);
+  for (const job of listJobs(wsId, ['discovered'], profileId)) {
     try { await rankJob(wsId, apiKey, profile, job); out.ranked++; }
     catch (e) { out.errors.push(`rank ${job.company}/${job.title}: ${e.message}`); }
   }
-  const top = listJobs(wsId, ['ranked']).filter((j) => j.fit_tier === 'core' || j.fit_tier === 'stretch').slice(0, tailorLimit);
+  const top = listJobs(wsId, ['ranked'], profileId).filter((j) => j.fit_tier === 'core' || j.fit_tier === 'stretch').slice(0, tailorLimit);
   for (const job of top) {
     try { await tailorJob(wsId, apiKey, profile, getJob(wsId, job.id)); out.tailored++; }
     catch (e) { out.errors.push(`tailor ${job.company}/${job.title}: ${e.message}`); }

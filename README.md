@@ -1,8 +1,8 @@
 # JobPilot-web
 
-A hosted, multi-user version of JobPilot. Anyone can open the site, create a private workspace,
-tell it about their experience, and get AI-tailored resumes and cover letters on their own
-dashboard. Each person brings their own Anthropic API key, so the operator pays nothing.
+A hosted, multi-user version of JobPilot. Anyone can open the site, create an account, tell it about
+their experience, and get AI-tailored resumes and cover letters on their own dashboard. Each person
+brings their own Anthropic API key, so the operator pays nothing.
 
 **It drafts; you apply.** JobPilot never submits an application for anyone — it prepares everything
 and the user reviews, edits, approves, and applies themselves. That's deliberate (it keeps humans in
@@ -10,33 +10,32 @@ control and avoids violating any job board's terms).
 
 ## How it works for a user
 
-1. Open the site → **Create my workspace** (name + your own Anthropic key from console.anthropic.com).
-2. You get a **private link** (an unguessable URL). Bookmark it — it's the only way back in, and it's
-   your access key. Don't share it.
-3. Fill in your **profile** (the only source the AI is allowed to use — it can't make anything up).
+1. **Create an account** (name, email, password) or **log in** — everything is saved to your account,
+   so your API key, all your profiles, and your application history are there next time. No lost links.
+2. **Make one or more profiles.** Each profile is a separate search with its own résumé facts and
+   application history — e.g. one for backend roles, one for management. Switch between them from the
+   dashboard; the pipeline runs against whichever is active.
+3. Fill in a profile (the only source the AI is allowed to use — it can't make anything up).
    You don't have to type it all: **Smart-fill** reads your uploaded **CV** (PDF/text), or you can
    **paste your LinkedIn profile text / data export**, or **describe an update in plain English**
    ("just moved to a Staff role at Stripe") — Claude structures it into the editable form and you
    review + Save. (We never log into LinkedIn for you — that risks your account.) Update it anytime.
 4. Add target companies / paste a job, hit **Find & draft jobs**, and review the drafts on your dashboard.
-5. Approve the ones you like, apply on the employer's site, mark them submitted to track.
+5. Approve the ones you like, apply on the employer's site, mark them submitted to track — per profile.
 
 ## Privacy & isolation
 
-- **Workspaces are fully isolated.** Every row is scoped to a workspace id and every query binds it;
-  there is no code path that returns another workspace's data. This is enforced and tested
-  (`test/isolation.test.mjs` — two workspaces, proven unable to read each other).
-- **Bring-your-own-key.** Each workspace stores its own Anthropic key, used only for its own runs,
-  never shown back, never shared. The operator's account is never billed.
-- **Access model.** A workspace is protected by its unguessable URL (like a private document link),
-  not a password. Simple and appropriate for a small trusted group; anyone with a workspace's link
-  can see and edit that workspace, so users should keep their link private.
-- The `no-referrer` policy prevents the private URL leaking to employer sites when a user clicks an
-  apply link.
+- **Accounts are fully isolated.** Every row is scoped to a workspace id and every query binds it;
+  there is no code path that returns another account's data. Enforced and tested
+  (`test/isolation.test.mjs` — two accounts + two profiles, proven unable to read each other).
+- **Login.** Email + password (scrypt-hashed); a signed, HttpOnly session cookie remembers you for
+  45 days. The account is also reachable by its unguessable id as a fallback.
+- **Bring-your-own-key.** Each account stores its own Anthropic key **encrypted at rest**, used only
+  for its own runs, never shown back, never shared. The operator's account is never billed.
+- The `no-referrer` policy prevents the account URL leaking to employer sites via apply links.
 
-> Note: this is a share-with-friends tool, not a hardened public SaaS. If you plan to open it to
-> strangers at scale, add real accounts (email + password/OAuth), encrypt stored API keys at rest,
-> add rate limiting, and move from SQLite to a managed database. See "Hardening" below.
+> Note: solid for a share-with-friends tool. Before opening to the general public at scale, see
+> "Hardening" for the remaining items (managed DB, CSRF tokens, distributed rate limiting).
 
 ## Run locally
 
@@ -71,6 +70,8 @@ provider (for djalphire.com that's Google Cloud DNS). Render issues HTTPS automa
 ## Hardening
 
 Already in place:
+- ✅ **Real accounts** — email + password (scrypt-hashed, never stored plaintext) with a signed
+  HttpOnly session cookie; duplicate-email and wrong-password both rejected.
 - ✅ **API keys encrypted at rest** (AES-256-GCM; server key from `JOBPILOT_SECRET`
   env, or auto-generated to `<data>/.secret`). Decrypted only in memory at call time.
 - ✅ **Security headers** — Content-Security-Policy (blocks all scripts; app has none),
@@ -80,9 +81,9 @@ Already in place:
   (default $20) so a runaway loop can't drain someone's key.
 
 Still recommended before opening to the general public at scale:
-- Real auth (email verification + password or OAuth) instead of secret-URL workspaces.
+- Email verification + password reset (login exists; reset needs an email provider).
 - Managed Postgres instead of local SQLite; per-workspace row-level security.
-- CSRF tokens on the POST forms (the secret-URL model mitigates but doesn't eliminate CSRF).
+- CSRF tokens on the POST forms (SameSite=Lax cookies mitigate but don't eliminate CSRF).
 - A distributed rate limiter (the current one is per-instance, in-memory).
 
 ## Configuration

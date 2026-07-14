@@ -48,5 +48,5 @@ export const page = (title, body, { workspace } = {}) => `<!doctype html><html l
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>${CSS}</style></head><body>
 <header><h1><a href="${workspace ? `/w/${workspace.id}` : '/'}">JobPilot</a></h1>
-${workspace ? `<span class="meta">${esc(workspace.name)} · <a href="/w/${workspace.id}/settings" style="color:inherit">settings</a></span>` : '<span class="meta">personal job-application assistant</span>'}
+${workspace ? `<span class="meta">${esc(workspace.name)} · <a href="/w/${workspace.id}/settings" style="color:inherit">settings</a> · <form method="post" action="/logout" style="display:inline;margin:0"><button style="background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;text-decoration:underline">log out</button></form></span>` : '<span class="meta">personal job-application assistant</span>'}
 </header><main>${body}</main></body></html>`;

@@ -2,7 +2,7 @@
 // key comes from JOBPILOT_SECRET (hex/base64, 32 bytes) or, if unset, a random
 // key persisted once to <data>/.secret. Values are only decrypted in memory at
 // the moment of an API call — never stored or rendered in plaintext.
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,4 +42,36 @@ export function decrypt(blob) {
   const decipher = createDecipheriv('aes-256-gcm', KEY, Buffer.from(ivB, 'base64'));
   decipher.setAuthTag(Buffer.from(tagB, 'base64'));
   return Buffer.concat([decipher.update(Buffer.from(dataB, 'base64')), decipher.final()]).toString('utf8');
+}
+
+// --- Password hashing (scrypt; built-in, no dependency) ---
+export function hashPassword(pw) {
+  const salt = randomBytes(16);
+  const hash = scryptSync(String(pw), salt, 64);
+  return `s1:${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+export function verifyPassword(pw, stored) {
+  if (!stored || !stored.startsWith('s1:')) return false;
+  const [, saltHex, hashHex] = stored.split(':');
+  const expected = Buffer.from(hashHex, 'hex');
+  const actual = scryptSync(String(pw), Buffer.from(saltHex, 'hex'), 64);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+// --- Signed session cookie (HMAC with the server key) ---
+export function signSession(wsId) {
+  const payload = `${wsId}.${Date.now()}`;
+  const sig = createHmac('sha256', KEY).update(payload).digest('base64url');
+  return `${Buffer.from(payload).toString('base64url')}.${sig}`;
+}
+export function readSession(cookie) {
+  if (!cookie || !cookie.includes('.')) return null;
+  const [payloadB, sig] = cookie.split('.');
+  let payload;
+  try { payload = Buffer.from(payloadB, 'base64url').toString('utf8'); } catch { return null; }
+  const expected = createHmac('sha256', KEY).update(payload).digest('base64url');
+  if (sig.length !== expected.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const [wsId, ts] = payload.split('.');
+  if (!wsId || !ts || Date.now() - Number(ts) > 45 * 864e5) return null; // 45-day expiry
+  return wsId;
 }

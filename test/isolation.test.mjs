@@ -52,6 +52,51 @@ test('two workspaces cannot see each other\'s jobs or documents', () => {
   assert.equal(dup.deduped, false);
 });
 
+test('email+password login returns the same account (persistence across sessions)', () => {
+  const id = store.createWorkspace({ name: 'Loginy', email: 'Casey@Example.com', password: 'hunter2horse', anthropicKey: 'sk-x' });
+  assert.equal(store.verifyLogin('casey@example.com', 'hunter2horse')?.id, id); // case-insensitive email
+  assert.equal(store.verifyLogin('casey@example.com', 'wrong'), null);
+  assert.equal(store.verifyLogin('nobody@example.com', 'hunter2horse'), null);
+  assert.equal(store.findWorkspaceByEmail('CASEY@example.com')?.id, id);
+  // The key persists with the account.
+  assert.equal(store.getApiKey(id), 'sk-x');
+});
+
+test('one account has multiple profiles; jobs stay separate per profile', () => {
+  const id = store.createWorkspace({ name: 'MultiP', email: 'm@e.com', password: 'passwordpass' });
+  const def = store.getActiveProfile(id); // auto-created "Default"
+  assert.ok(def);
+  const backend = store.createProfile(id, 'Backend roles');
+  const mgmt = store.createProfile(id, 'Management roles');
+  assert.equal(store.listProfiles(id).length, 3);
+
+  // Jobs are tagged to a profile and listed per profile.
+  store.upsertJob(id, { company: 'Acme', title: 'Backend Engineer', source: 'manual', profile_id: backend });
+  store.upsertJob(id, { company: 'Acme', title: 'Eng Manager', source: 'manual', profile_id: mgmt });
+  assert.equal(store.listJobs(id, null, backend).length, 1);
+  assert.equal(store.listJobs(id, null, mgmt).length, 1);
+  assert.equal(store.listJobs(id, null, backend)[0].title, 'Backend Engineer');
+  // Same company+title can exist under two different profiles (per-profile dedup).
+  store.upsertJob(id, { company: 'Acme', title: 'Backend Engineer', source: 'manual', profile_id: mgmt });
+  assert.equal(store.listJobs(id, null, mgmt).length, 2);
+
+  // Switching the active profile, and deleting one (keeps ≥1, removes its jobs).
+  store.activateProfile(id, backend);
+  assert.equal(store.getActiveProfile(id).id, backend);
+  assert.equal(store.deleteProfile(id, mgmt), true);
+  assert.equal(store.listProfiles(id).length, 2);
+  assert.equal(store.getJob(id, store.listJobs(id, null, backend)[0].id) != null, true);
+});
+
+test('profiles are workspace-scoped — no cross-account profile access', () => {
+  const a = store.createWorkspace({ name: 'A', email: 'a1@e.com', password: 'passwordpass' });
+  const b = store.createWorkspace({ name: 'B', email: 'b1@e.com', password: 'passwordpass' });
+  const pa = store.getActiveProfile(a).id;
+  assert.equal(store.getProfile(b, pa), null);          // B cannot read A's profile
+  store.updateProfileById(b, pa, { name: 'HACK' });      // cross write is a no-op
+  assert.notEqual(JSON.parse(store.getProfile(a, pa).profile_json).name, 'HACK');
+});
+
 test('per-workspace API keys are independent and encrypted at rest', () => {
   const a = store.createWorkspace({ name: 'K1', anthropicKey: 'sk-one' });
   const b = store.createWorkspace({ name: 'K2', anthropicKey: 'sk-two' });
